@@ -1,4 +1,4 @@
-﻿"""概率论与数理统计 Agent Demo — CLI 入口（清理后版本）
+"""概率论与数理统计 Agent Demo — CLI 入口（清理后版本）
 """
 import os
 import time
@@ -26,6 +26,8 @@ STAGE_LABELS = {
     "execute_kb": "知识库检索",
     "execute_search": "网络搜索",
     "execute_viz": "可视化生成",
+    "execute_problem": "题目讲解",
+    "execute_analytics": "学习分析",
     "summary": "内容优化",
 }
 
@@ -44,13 +46,19 @@ def _run_simple_mode(graph, config):
 
 
 def _display_plan(plan):
-    kb_s = "\u662f" if plan.get("need_kb") else "\u5426"
-    sr_s = "\u662f" if plan.get("need_search") else "\u5426"
-    vz_s = "\u662f" if plan.get("need_viz") else "\u5426"
-    print(f"  知识库={kb_s}  搜索={sr_s}  可视化={vz_s}")
+    kb_s = "是" if plan.get("need_kb") else "否"
+    sr_s = "是" if plan.get("need_search") else "否"
+    vz_s = "是" if plan.get("need_viz") else "否"
+    pb_s = "是" if plan.get("need_problem") else "否"
+    an_s = "是" if plan.get("need_analytics") else "否"
+    print(f"  知识库={kb_s}  搜索={sr_s}  可视化={vz_s}  题目={pb_s}  分析={an_s}")
     if plan.get("target_distribution"):
         print(f"  涉及分布：{plan['target_distribution']}")
-    print(f"  理由：{plan.get('reasoning', '')}\n")
+    if plan.get("problem_mode"):
+        print(f"  题目模式：{plan['problem_mode']}")
+    if plan.get("analytics_type"):
+        print(f"  分析类型：{plan['analytics_type']}")
+    print(f"  理由：{plan.get('reasoning', '')}")
 
 
 def _show_results(state):

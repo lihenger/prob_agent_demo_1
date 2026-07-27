@@ -178,3 +178,68 @@ ext_input 全局变量绕圈 hack
   - 新增显式关键词列表（假设检验、分布、正态、泊松等约 20 个）
   - 新增 6 个边界示例覆盖混合输入场景
   - 显式说明 response_mode=simple 时 need_* 全为 false
+
+## 2026-07-27 — 新增 Problem + Analytics Agent（扩展至 5 Agent 系统）
+
+- **修改原因**：按照 extension-guide.md 规划，从 3 Agent 扩展到 5 Agent，覆盖题目讲解和学习分析场景
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+|  | Problem Agent（解题/多解对比/批改三种模式） |
+|  | Analytics Agent（进度/历史/断点分析） |
+|  | 数学计算占位工具（待替换 SymPy） |
+|  | 学习数据占位工具（待替换 PostgreSQL） |
+
+### 修改文件
+| 文件 | 修改内容 |
+|------|----------|
+|  | AgentState 新增  /  字段 |
+|  | 新增 PROBLEM_AGENT_PROMPT + ANALYTICS_AGENT_PROMPT；更新 Orchestrator/Summary 模板 |
+|  | 新增 problem_node / analytics_node 导出 |
+|  | 新增 2 个图节点 + 路由逻辑；pause 拒绝时清理 2 个新字段 |
+|  | 3 处 fallback plan 增加 need_problem / need_analytics 字段 |
+|  | 读取 2 个新字段写入 Summary Prompt + md 文件 |
+|  | STAGE_LABELS 增加 2 个标签；_display_plan 展示新字段 |
+|  | 更新架构为 8 节点、7 Agent、5 工具 |
+|  | 新增 problem_node / analytics_node / math_tool / db_tool 文档 |
+|  | 12 项新增测试（总 28 → 40 项） |
+
+### 架构变更
+- **节点数**：6 → 8（新增 execute_problem + execute_analytics）
+- **Agent 数**：5 → 7（新增 Problem + Analytics Agent）
+- **工具数**：3 → 5（新增 math_tool + db_tool）
+- **State 字段**：9 → 11
+- **Prompt 模板**：5 → 7
+- **脱机测试**：28 → 40 项，全部通过
+- **plan.json**：新增 need_problem / problem_mode / need_analytics / analytics_type
+
+### 设计决策
+- 沿用现有共享 State 直写模式，不做消息队列升级
+- 两个新工具均为纯占位实现（和 search_tool 相同模式）
+- 完全复用 search_agent.py 代码结构
+- 路由在  中纯代码判断，不调 LLM
+- **修改位置**：config/prompts.py
+- **修改原因**：修正拼接输入时 LLM 按结尾语义误判为 simple 模式、丢失专业知识上下文
+- **修改内容**：
+  - 规则从平铺改为严格优先级排序：专业知识关键词匹配优先于闲聊/问候判定
+  - 新增显式关键词列表（假设检验、分布、正态、泊松等约 20 个）
+  - 新增 6 个边界示例覆盖混合输入场景
+  - 显式说明 response_mode=simple 时 need_* 全为 false
+
+## 2026-07-27 — current_step 字段修复：并行写入冲突
+
+- **修改位置**：workflow/state.py, CLAUDE.md, api_doc.md, data.md
+- **修改原因**：并行节点（execute_kb + execute_search 等）同时写入 `current_step` 字段，LangGraph 的 `LastValue` channel 在同一 step 内只能接受一次写入，触发 `INVALID_CONCURRENT_GRAPH_UPDATE` 错误
+- **修改内容**：
+  - state.py 第 9 行：`from typing import TypedDict, Annotated`（新增 Annotated 导入）
+  - state.py 第 31 行：`current_step: str` → `current_step: Annotated[str, add]`（改为 BinaryOperatorAggregate channel，多次写入通过字符串拼接合并）
+  - CLAUDE.md 第 65 行：同步更新类型声明
+  - api_doc.md 第 203 行：同步更新类型声明
+- **影响评估**：`current_step` 为"只写不读"字段，无代码消费其值，类型变更无副作用
+
+### 补充修复：errors 和 message_history 同样缺少 Annotated 归约
+
+- **修改内容**：
+  - state.py：`errors: list` → `errors: Annotated[list, add]`，`message_history: list` → `message_history: Annotated[list, add]`
+  - CLAUDE.md、api_doc.md 同步更新

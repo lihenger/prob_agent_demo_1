@@ -14,6 +14,8 @@ def summary_node(state: AgentState) -> dict:
     kb_results = state.get("kb_results", "")
     search_results = state.get("search_results", "")
     viz_path = state.get("viz_path", "")
+    problem_results = state.get("problem_results", "")
+    analytics_results = state.get("analytics_results", "")
 
     llm = ChatOpenAI(
         model=DEEPSEEK_MODEL,
@@ -46,6 +48,8 @@ def summary_node(state: AgentState) -> dict:
         kb_results=kb_results or "（无相关知识库内容）",
         search_results=search_results or "",
         viz_results=viz_hint,
+        problem_results=problem_results or "",
+        analytics_results=analytics_results or "",
     )
 
     try:
@@ -66,6 +70,10 @@ def summary_node(state: AgentState) -> dict:
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(f"# 概率论 Agent 回答\n\n")
             f.write(f"**问题**：{user_input}\n\n")
+            if problem_results:
+                f.write(f"\n---\n### 题目讲解\n\n{problem_results}")
+            if analytics_results:
+                f.write(f"\n---\n### 学习分析\n\n{analytics_results}")
             f.write(result)
     except Exception as e:
         pass  # md 文件写入失败不影响主流程

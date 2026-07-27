@@ -4,8 +4,11 @@ from .knowledge import knowledge_node
 from .search_agent import search_node
 from .visualization import visualization_node
 from .summary import summary_node
+from .problem import problem_node
+from .analytics import analytics_node
 
 __all__ = [
     "orchestrator_node", "knowledge_node", "search_node",
     "visualization_node", "summary_node",
+    "problem_node", "analytics_node",
 ]

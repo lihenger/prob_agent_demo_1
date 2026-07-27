@@ -14,7 +14,7 @@ print("Agent Demo — 脱机模块测试")
 print("=" * 50)
 
 # 1. 知识库检索
-print("\n[1/4] 工具函数")
+print("\n[1/5] 工具函数")
 try:
     from tools.kb_tool import search_knowledge_base
     result = search_knowledge_base("正态分布 N(0,1)")
@@ -48,13 +48,28 @@ test("可视化工具（空参数返回空）", result == "")
 result2 = generate_visualization("nonexistent_dist", {})
 test("可视化工具（未知分布返回错误提示）", result2.startswith("["))
 
+# 4b. 新增工具函数
+from tools.math_tool import math_compute
+result = math_compute("求正态分布N(0,1)的期望", "solve")
+test("数学计算工具（solve 模式返回占位）", "模拟数学计算" in result and "解题" in result)
+
+from tools.db_tool import db_read
+result = db_read("progress")
+test("数据库工具（progress 返回占位）", "模拟数据" in result and "正态" in result)
+result2 = db_read("bookmark")
+test("数据库工具（bookmark 返回占位）", "断点" in result2)
+result3 = db_read("unknown_type")
+test("数据库工具（未知类型返回提示）", "未知" in result3)
+
 # 5. AgentState
-print("\n[2/4] Workflow 定义")
+print("\n[2/5] Workflow 定义")
 try:
     from workflow.state import AgentState
     from typing import get_type_hints
     test("AgentState TypedDict 定义", "plan" in AgentState.__annotations__)
     test("State 含扩展预留字段", "message_history" in AgentState.__annotations__)
+    test("State 含 problem_results 字段", "problem_results" in AgentState.__annotations__)
+    test("State 含 analytics_results 字段", "analytics_results" in AgentState.__annotations__)
 except Exception as e:
     test(f"State 加载异常：{e}", False)
 
@@ -68,11 +83,13 @@ try:
     test("图含 orchestrator 节点", "orchestrator" in nodes)
     test("图含 knowledge 节点", "execute_kb" in nodes)
     test("图含 visualization 节点", "execute_viz" in nodes)
+    test("图含 problem 节点", "execute_problem" in nodes)
+    test("图含 analytics 节点", "execute_analytics" in nodes)
 except Exception as e:
     test(f"Graph 编译异常：{e}", False)
 
 # 7. 配置加载
-print("\n[3/4] 配置与提示词")
+print("\n[3/5] 配置与提示词")
 try:
     from config.settings import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
     test("配置可加载", True)
@@ -100,16 +117,24 @@ try:
 
     p4 = SUMMARY_AGENT_PROMPT.format(
         user_input="测试", kb_results="结果",
-        search_results="", viz_results=""
+        search_results="", viz_results="",
+        problem_results="", analytics_results=""
     )
     test("Summary Agent 提示词无解析错误", True)
+
+    from config.prompts import PROBLEM_AGENT_PROMPT, ANALYTICS_AGENT_PROMPT
+    p5 = PROBLEM_AGENT_PROMPT.format(user_input="测试", mode_text="解题模式", math_result="占位")
+    test("Problem Agent 提示词无解析错误", "测试" in p5 and "{{" not in p5)
+
+    p6 = ANALYTICS_AGENT_PROMPT.format(user_input="测试", analytics_type_text="学习进度", db_result="占位")
+    test("Analytics Agent 提示词无解析错误", "测试" in p6 and "{{" not in p6)
 except KeyError as e:
     test(f"提示词 KeyError（花括号未转义）：{e}", False)
 except Exception as e:
     test(f"提示词异常：{e}", False)
 
 # 9. Agent 函数签名
-print("\n[4/4] Agent 节点函数")
+print("\n[4/5] Agent 节点函数")
 try:
     from agents.orchestrator import orchestrator_node, _parse_plan
     result = _parse_plan('{"need_kb": true, "need_search": false, "need_viz": false, "reasoning": "测试"}')
@@ -124,6 +149,14 @@ try:
     from agents.visualization import visualization_node
     sig2 = inspect.signature(visualization_node)
     test("Visualization 节点签名 (state) -> dict", True)
+
+    from agents.problem import problem_node
+    sig3 = inspect.signature(problem_node)
+    test("Problem 节点签名 (state) -> dict", True)
+
+    from agents.analytics import analytics_node
+    sig4 = inspect.signature(analytics_node)
+    test("Analytics 节点签名 (state) -> dict", True)
 except Exception as e:
     test(f"Agent 函数异常：{e}", False)
 

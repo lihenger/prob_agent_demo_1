@@ -11,7 +11,7 @@
 | **路径** | `agents/orchestrator.py` |
 | **输入** | `state.user_input` |
 | **输出** | `state.plan`, `state.current_step`, `state.message_history` |
-| **模型** | DeepSeek `deepseek-chat`，temperature=0.1，timeout=30 |
+| **模型** | DeepSeek `deepseek-v4-flash`，temperature=0.1，timeout=30 |
 | **Prompt** | `config/prompts.py` → `ORCHESTRATOR_PROMPT` |
 
 **plan 结构：**
@@ -20,9 +20,13 @@
     "need_kb": bool,              # 是否需要查知识库
     "need_search": bool,          # 是否需要网络搜索
     "need_viz": bool,             # 是否需要可视化
+    "need_problem": bool,         # 是否需要题目讲解
+    "need_analytics": bool,       # 是否需要学习分析
+    "problem_mode": str | None,   # "solve" | "compare" | "grade"
+    "analytics_type": str | None, # "progress" | "history" | "bookmark"
     "query_type": str,            # concept/distribution/formula/comparison/application/greeting/other
     "response_mode": str,         # "standard"（专业回答）或 "simple"（简单回应）
-    "target_distribution": str,   # 分布英文名（normal/binomial/poisson/chi_square/student_t/exponential…）
+    "target_distribution": str,   # 分布英文名（normal/binomial/poisson…）
     "params": dict,               # 分布参数，如 {"mu": 0, "sigma": 1}
     "reasoning": str,             # 分析理由
 }
@@ -35,7 +39,7 @@
 | **路径** | `agents/knowledge.py` |
 | **流程** | `kb_tool.search_knowledge_base()` 检索 → DeepSeek `KB_AGENT_PROMPT` 提取知识点 |
 | **输出** | `state.kb_results` |
-| **模型** | DeepSeek `deepseek-chat`，temperature=0.3，timeout=60 |
+| **模型** | DeepSeek `deepseek-v4-flash`，temperature=0.3，timeout=60 |
 | **注意** | 不含 summary 逻辑，summary 由独立节点负责 |
 
 ### 1.3 search_node（execute_search 节点）
@@ -56,14 +60,36 @@
 | **输出** | `state.viz_path`（HTML 文件路径） |
 | **生成** | `output/{dist_type}_viz.html` |
 
-### 1.5 summary_node
+### 1.5 problem_node（execute_problem 节点）— 新增
+
+| 项目 | 说明 |
+|------|------|
+| **路径** | `agents/problem.py` |
+| **流程** | 读 `plan.problem_mode` → `math_tool.math_compute()` → DeepSeek `PROBLEM_AGENT_PROMPT` 生成讲解 |
+| **输出** | `state.problem_results` |
+| **触发条件** | `need_problem=true` |
+| **模式** | `solve`（解题）/ `compare`（多解对比）/ `grade`（批改） |
+| **工具** | `tools/math_tool.py` — 当前为占位实现，待替换为 SymPy |
+
+### 1.6 analytics_node（execute_analytics 节点）— 新增
+
+| 项目 | 说明 |
+|------|------|
+| **路径** | `agents/analytics.py` |
+| **流程** | 读 `plan.analytics_type` → `db_tool.db_read()` → DeepSeek `ANALYTICS_AGENT_PROMPT` 生成分析 |
+| **输出** | `state.analytics_results` |
+| **触发条件** | `need_analytics=true` |
+| **类型** | `progress`（进度）/ `history`（历史）/ `bookmark`（断点） |
+| **工具** | `tools/db_tool.py` — 当前为占位实现，待替换为 PostgreSQL |
+
+### 1.7 summary_node
 
 | 项目 | 说明 |
 |------|------|
 | **路径** | `agents/summary.py` |
-| **流程** | 读取 `state.kb_results` + `state.search_results` + `state.viz_path` → LLM 优化输出 → 写入 md 文件 |
+| **流程** | 读取 `state.kb_results` + `state.search_results` + `state.viz_path` + `state.problem_results` + `state.analytics_results` → LLM 优化输出 → 写入 md 文件 |
 | **输出** | `state.final_output` + `output/summary_{timestamp}.md` |
-| **模型** | DeepSeek `deepseek-chat`，temperature=0.3，timeout=60 |
+| **模型** | DeepSeek `deepseek-v4-flash`，temperature=0.3，timeout=60 |
 | **分支** | `response_mode="simple"` 时走 `SIMPLE_RESPONSE_PROMPT` |
 
 ---
@@ -76,10 +102,10 @@
 |------|------|
 | **路径** | `workflow/graph.py` |
 | **入口** | orchestrator |
-| **节点** | orchestrator, pause, execute_kb, execute_search, execute_viz, summary |
+| **节点** | orchestrator, pause, execute_kb, execute_search, execute_viz, execute_problem, execute_analytics, summary |
 | **Checkpointer** | MemorySaver（thread_id 维度） |
-| **HITL** | 1 个 `interrupt()`：pause（暂停展示计划） |
-| **并行** | pause 后按 need_* 列表 fan-out 并行执行 kb/search/viz |
+| **HITL** | 1 个 `interrupt()`：pause（暂展示计划） |
+| **并行** | pause 后按 need_* 列表 fan-out 并行执行最多 5 个节点 |
 | **回退** | 拒绝时 pause 退回 orchestrator 重新分析 |
 
 ### 2.2 路由函数
@@ -87,11 +113,15 @@
 ```python
 # pause:
 #   approved=False → orchestrator（回退重新分析）
-#   approved=True → [need_kb → execute_kb, need_search → execute_search, need_viz → execute_viz] 并行
+#   approved=True → [need_kb→execute_kb, need_search→execute_search,
+#                     need_viz→execute_viz, need_problem→execute_problem,
+#                     need_analytics→execute_analytics] 并行
 #   approved=True & 全 false → summary
 # execute_kb → summary（固定边）
 # execute_search → summary（固定边）
 # execute_viz → summary（固定边）
+# execute_problem → summary（固定边）
+# execute_analytics → summary（固定边）
 # summary → END
 ```
 
@@ -133,6 +163,28 @@ def generate_visualization(distribution_type: str, params: dict) -> str:
 - 依赖：`参考文档/skills/prob-dist-viz/scripts/`（引用不拷贝）
 - 扩展：大产品替换为 SymPy + Matplotlib
 
+### 3.4 math_tool.math_compute — 新增
+
+```python
+def math_compute(user_input: str, mode: str) -> str:
+    """执行数学计算，当前为占位实现"""
+```
+
+- 输入：用户问题 + 模式（solve/compare/grade）
+- 输出：占位文本 `【模拟数学计算 - {mode}模式】`
+- 扩展：大产品替换为 SymPy 符号计算
+
+### 3.5 db_tool.db_read — 新增
+
+```python
+def db_read(analytics_type: str) -> str:
+    """读取学习数据，当前为占位实现"""
+```
+
+- 输入：类型（progress/history/bookmark）
+- 输出：mock JSON 数据
+- 扩展：大产品替换为 PostgreSQL / SQLAlchemy（签名不变）
+
 ---
 
 ## 4. AgentState 定义
@@ -145,13 +197,15 @@ class AgentState(TypedDict):
     kb_results: str          # execute_kb 的检索结果
     search_results: str      # execute_search 的搜索结果
     viz_path: str            # execute_viz 的可视化 HTML 路径
+    problem_results: str     # execute_problem 的题目讲解结果  ← 新增
+    analytics_results: str   # execute_analytics 的学习分析结果  ← 新增
     final_output: str        # summary 优化后的最终回答
-    current_step: str        # 当前执行步骤
-    errors: list             # operator.add 归约，记录各步异常
-    message_history: list    # operator.add 归约，记录 {sender, type, payload}
+    current_step: Annotated[str, add]  # 当前执行步骤，operator.add 归约
+    errors: Annotated[list, add]       # operator.add 归约，记录各步异常
+    message_history: Annotated[list, add]  # operator.add 归约，记录 {sender, type, payload}
 ```
 
-**扩展预留：** `problem_results`, `analytics_data`, `message_queue`, `user_id`, `session_id`
+**扩展预留：** `message_queue`, `user_id`, `session_id`
 
 ---
 
@@ -193,7 +247,7 @@ interrupt({
 ```
 1. 用户输入 → graph.stream() → orchestrator 完成 → pause 暂停
 2. 展示 plan → 用户 y/n
-3. y → Command(resume={"approved": True}) → 按 need_* 列表并行分发到 kb/search/viz
+3. y → Command(resume={"approved": True}) → 按 need_* 列表并行分发到 kb/search/viz/problem/analytics
 4. 各执行节点完成后走固定边汇聚到 summary
 5. 每个节点完成后打印阶段提示（间隔 0.5s）
 6. summary 完成 → 读取 state → 打字效果输出回答
@@ -251,9 +305,9 @@ interrupt({
 | `tools/kb_tool.py` | `search_knowledge_base` | `(str) -> str` | Qdrant 向量检索 |
 | `tools/search_tool.py` | `simulate_search` | `(str) -> str` | Tavily / DuckDuckGo API |
 | `tools/viz_tool.py` | `generate_visualization` | `(str, dict) -> str` | SymPy + Matplotlib |
+| `tools/math_tool.py` | `math_compute` | `(str, str) -> str` | SymPy 符号计算 |
+| `tools/db_tool.py` | `db_read` | `(str) -> str` | PostgreSQL / SQLAlchemy |
 | `workflow/state.py` | `AgentState` | TypedDict | 追加 message_queue 等字段 |
-| `workflow/graph.py` | `build_graph` | `(MemorySaver) -> StateGraph` | 追加 Problem/Analytics 节点 |
-| `main.py` | `main` | CLI 入口 | FastAPI + SSE |
 | `agents/knowledge.py` | `knowledge_node` | `(state) -> dict` | 升级为 RAG + Qdrant 检索 |
 | `agents/summary.py` | `summary_node` | `(state) -> dict` | 可拆分独立 Summary Agent |
 
@@ -261,8 +315,10 @@ interrupt({
 
 | 模板 | 用途 | 关键特性 |
 |------|------|----------|
-| `ORCHESTRATOR_PROMPT` | 意图分析 + plan 生成 | 输出 JSON，含 response_mode 字段 |
+| `ORCHESTRATOR_PROMPT` | 意图分析 + plan 生成 | 输出 JSON，含 5 个 need_* 字段 |
 | `KB_AGENT_PROMPT` | 知识库知识点提取 | 含 Extension 占位（RAG 上下文） |
 | `SEARCH_AGENT_PROMPT` | 模拟网络搜索 | 以「【模拟搜索结果】」开头 |
-| `SUMMARY_AGENT_PROMPT` | 整合输出优化 | 含 viz_results 占位 + 仅可视化精简规则 + 可视化引用放末尾 |
+| `PROBLEM_AGENT_PROMPT` | 题目讲解 | 支持解题/多解对比/批改三种模式 |
+| `ANALYTICS_AGENT_PROMPT` | 学习分析 | 支持进度/历史/断点三类分析 |
+| `SUMMARY_AGENT_PROMPT` | 整合输出优化 | 含 5 路结果占位 + 仅可视化时简洁规则 |
 | `SIMPLE_RESPONSE_PROMPT` | 问候/闲聊回应 | 不自我介绍、不强行联系概率论 |

@@ -32,6 +32,8 @@ def orchestrator_node(state: AgentState) -> dict:
     except Exception as e:
         plan = {
             "need_kb": True, "need_search": False, "need_viz": False,
+            "need_problem": False, "need_analytics": False,
+            "problem_mode": None, "analytics_type": None,
             "query_type": "concept", "response_mode": "standard",
             "target_distribution": None, "params": {},
             "reasoning": f"[Orchestrator 调用失败] {type(e).__name__}: {e}",
@@ -59,6 +61,8 @@ def _parse_plan(content: str) -> dict:
             preview = raw[:200].replace("\n", " ")
             return {
                 "need_kb": True, "need_search": False, "need_viz": False,
+                "need_problem": False, "need_analytics": False,
+                "problem_mode": None, "analytics_type": None,
                 "query_type": "concept", "response_mode": "standard",
                 "target_distribution": None, "params": {},
                 "reasoning": f"[JSON 解析失败] {e}。原始响应：{preview}...",
@@ -66,6 +70,8 @@ def _parse_plan(content: str) -> dict:
     preview = content[:200].replace("\n", " ")
     return {
         "need_kb": True, "need_search": False, "need_viz": False,
+        "need_problem": False, "need_analytics": False,
+        "problem_mode": None, "analytics_type": None,
         "query_type": "concept", "response_mode": "standard",
         "target_distribution": None, "params": {},
         "reasoning": f"[未检测到 JSON] 原始响应：{preview}...",

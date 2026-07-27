@@ -6,7 +6,7 @@
 - user_id / session_id — JWT 鉴权与会话管理
 """
 
-from typing import TypedDict
+from typing import TypedDict, Annotated
 from operator import add
 
 
@@ -23,18 +23,18 @@ class AgentState(TypedDict):
     kb_results: str
     search_results: str
     viz_path: str
+    problem_results: str
+    analytics_results: str
     final_output: str
 
     # 执行元数据
-    current_step: str
-    errors: list          # operator.add 归约
+    current_step: Annotated[str, add]  # operator.add 归约，支持并行节点写入
+    errors: Annotated[list, add]          # operator.add 归约
 
     # ---- 扩展预留字段 ----
-    message_history: list  # operator.add 归约，记录 {sender, type, payload}
+    message_history: Annotated[list, add]  # operator.add 归约，记录 {sender, type, payload}
 
 # [Future] 大产品补充字段：
-# problem_results: str
-# analytics_data: dict
 # message_queue: list
 # user_id: str
 # session_id: str

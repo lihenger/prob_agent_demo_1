@@ -6,6 +6,7 @@ from workflow.state import AgentState
 from agents import (
     orchestrator_node, knowledge_node, search_node,
     visualization_node, summary_node,
+    problem_node, analytics_node,
 )
 
 
@@ -17,6 +18,8 @@ def build_graph(memory):
     builder.add_node("execute_kb", knowledge_node)
     builder.add_node("execute_search", search_node)
     builder.add_node("execute_viz", visualization_node)
+    builder.add_node("execute_problem", problem_node)
+    builder.add_node("execute_analytics", analytics_node)
     builder.add_node("summary", summary_node)
 
     builder.set_entry_point("orchestrator")
@@ -29,6 +32,8 @@ def build_graph(memory):
     builder.add_edge("execute_kb", "summary")
     builder.add_edge("execute_search", "summary")
     builder.add_edge("execute_viz", "summary")
+    builder.add_edge("execute_problem", "summary")
+    builder.add_edge("execute_analytics", "summary")
     builder.add_edge("summary", END)
 
     return builder.compile(checkpointer=memory)
@@ -52,6 +57,10 @@ def _route_after_pause(state):
         targets.append("execute_search")
     if plan.get("need_viz"):
         targets.append("execute_viz")
+    if plan.get("need_problem"):
+        targets.append("execute_problem")
+    if plan.get("need_analytics"):
+        targets.append("execute_analytics")
 
     return targets if targets else "summary"
 
@@ -77,6 +86,8 @@ def _pause_node(state: AgentState) -> dict:
         updates["search_results"] = ""
         updates["viz_path"] = ""
         updates["final_output"] = ""
+        updates["problem_results"] = ""
+        updates["analytics_results"] = ""
         if response.get("corrected_input"):
             updates["user_input"] = response["corrected_input"]
     return updates
