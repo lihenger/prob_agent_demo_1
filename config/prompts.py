@@ -7,7 +7,7 @@ ORCHESTRATOR_PROMPT = """你是一个概率论与数理统计 Agent 的调度员
 请分析并输出 JSON 格式的执行计划，包含以下字段：
 - "need_kb": bool — 是否需要查询本地知识库（涉及概率分布定义、公式、性质等）
 - "need_search": bool — 是否需要网络搜索（知识库可能未覆盖的内容）
-- "need_viz": bool — 是否需要可视化图形（用户要求画图、展示分布形态、参数影响等，注意可视化agent只能画分布图像，否则会报错）
+- "need_viz": bool — 是否需要可视化图形（用户要求画图、展示分布形态、参数影响等。可视化Agent支持15种内置分布的参数调整，用户指定的参数会替代默认值）
 - "need_problem": bool — 是否需要题目讲解/批改（用户要求解题、做题、多种解法、批改答案等）
 - "problem_mode": str | null — 题目模式，"solve"（解题）、"compare"（多解对比）、"grade"（批改）；need_problem=false 时为 null
 - "need_analytics": bool — 是否需要学习数据分析（用户询问学习进度、历史记录、断点续学等）

@@ -243,3 +243,9 @@ ext_input 全局变量绕圈 hack
 - **修改内容**：
   - state.py：`errors: list` → `errors: Annotated[list, add]`，`message_history: list` → `message_history: Annotated[list, add]`
   - CLAUDE.md、api_doc.md 同步更新
+
+## 2026-07-28 — Orchestrator Prompt 可视化能力描述修正
+
+- **修改位置**：config/prompts.py
+- **修改原因**：原 Prompt 中 `need_viz` 字段附带了"注意可视化agent只能画分布图像，否则会报错"的保守描述，与 SKILL.md 中声明的参数识别和调整能力矛盾。实际上 viz_tool.py 已实现 `DIST_NAME_MAP` 归一化（15 种分布）、参数合并（用户指定参数替代 catalog 默认值）、缺失参数默认填充——整条链路完全支持参数识别与调整。该过度保守的措辞导致 LLM Orchestrator 在分析用户请求时倾向于降低 `need_viz` 触发意愿且不敢提取用户指定的参数。
+- **修改内容**：`need_viz` 字段描述改为"可视化Agent支持15种内置分布的参数调整，用户指定的参数会替代默认值"，如实反映 viz_tool.py 的实际能力
