@@ -244,8 +244,13 @@ ext_input 全局变量绕圈 hack
   - state.py：`errors: list` → `errors: Annotated[list, add]`，`message_history: list` → `message_history: Annotated[list, add]`
   - CLAUDE.md、api_doc.md 同步更新
 
-## 2026-07-28 — Orchestrator Prompt 可视化能力描述修正
+## 2026-07-28 — 可视化参数解析链路修复：从 LLM 输出到 Skill 原生的参数提取
 
-- **修改位置**：config/prompts.py
-- **修改原因**：原 Prompt 中 `need_viz` 字段附带了"注意可视化agent只能画分布图像，否则会报错"的保守描述，与 SKILL.md 中声明的参数识别和调整能力矛盾。实际上 viz_tool.py 已实现 `DIST_NAME_MAP` 归一化（15 种分布）、参数合并（用户指定参数替代 catalog 默认值）、缺失参数默认填充——整条链路完全支持参数识别与调整。该过度保守的措辞导致 LLM Orchestrator 在分析用户请求时倾向于降低 `need_viz` 触发意愿且不敢提取用户指定的参数。
-- **修改内容**：`need_viz` 字段描述改为"可视化Agent支持15种内置分布的参数调整，用户指定的参数会替代默认值"，如实反映 viz_tool.py 的实际能力
+- **修改位置**：config/prompts.py, tools/viz_tool.py, agents/visualization.py, 参考文档/skills/prob-dist-viz/scripts/parse_input.py
+- 进一步排查发现根本原因在于 `parse_input.py` 未参与实际运行时参数提取——参数提取完全依赖 LLM 输出参数名，而 LLM 不知道 catalog 的参数名约定。`parse_input.py` 本身也缺少分布特定的参数跨名映射（如 `n`→`k` for chi_square），正则命中后因 `n not in entry["params"]` 直接跳过。
+- **修改内容**（4 个文件）：
+  1. **`参考文档/skills/prob-dist-viz/scripts/parse_input.py`**：新增 `PARAM_REMAP` 字典（chi_square: n/df→k, student_t: n/df→nu, poisson/exponential: lambda→lam）；`PARAM_PATTERNS` 补 `"df"` 正则匹配；`extract_params()` 重写：先对括号提取结果做跨名映射，再对 `PARAM_PATTERNS` 命中的非 catalog 参数做 remap 转发
+  2. **`tools/viz_tool.py`**：`generate_visualization()` 新增 `user_input` 参数，调用 `pi.parse(user_input)` 用完整 skill 从原始输入提取参数；合并优先级为 skill 解析 > LLM 传参 > catalog 默认值
+  3. **`agents/visualization.py`**：`visualization_node()` 从 `state["user_input"]` 读取原始输入并传给 `generate_visualization()`
+  4. **`config/prompts.py`**：`need_viz` 描述从 "注意可视化agent只能画分布图像，否则会报错" 改为如实描述能力
+- **修复验证**：7 组参数输入（卡方 n=5、t 分布 df=10、泊松 lambda=4、指数 λ=2、正态 N(2,0.5)、二项 n=20,p=0.3、Chi-square(8)）全部解析正确；`test_offline.py` 40 项全部通过

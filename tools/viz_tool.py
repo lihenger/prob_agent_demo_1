@@ -48,7 +48,7 @@ def _find_skill_scripts() -> str:
     return ""
 
 
-def generate_visualization(distribution_type: str, params: dict) -> str:
+def generate_visualization(distribution_type: str, params: dict, user_input: str = "") -> str:
     distribution_type = _normalize_dist_type(distribution_type)
     if not distribution_type:
         return ""
@@ -58,15 +58,27 @@ def generate_visualization(distribution_type: str, params: dict) -> str:
     sys.path.insert(0, skill_dir)
     try:
         import distributions_catalog as dc
+        import parse_input as pi
         from generate_visualization import build_html
         if distribution_type not in dc.CATALOG:
             return f"[暂不支持的分布类型：{distribution_type}]"
         dist = dc.CATALOG[distribution_type]
 
-        # 合并传入参数与 catalog 默认值（缺失参数用默认值填充）
+        # 优先用 skill 的 parse_input 从用户原始输入提取参数（覆盖 LLM 输出）
+        skill_params = {}
+        if user_input:
+            try:
+                parsed = pi.parse(user_input, override_type=distribution_type)
+                skill_params = parsed.get("params", {})
+            except Exception:
+                skill_params = {}
+
+        # 合并：用户输入解析结果 > LLM 传参 > catalog 默认值
         full_params = {}
         for name, spec in dist["params"].items():
-            if name in params:
+            if name in skill_params:
+                full_params[name] = float(skill_params[name])
+            elif name in params:
                 full_params[name] = float(params[name])
             else:
                 full_params[name] = float(spec["default"])

@@ -15,7 +15,8 @@ def visualization_node(state: AgentState) -> dict:
     plan = state.get("plan", {})
     dist_type = plan.get("target_distribution", "")
     params = plan.get("params", {})
-    viz_path = generate_visualization(dist_type, params) if dist_type else ""
+    user_input = state.get("user_input", "")
+    viz_path = generate_visualization(dist_type, params, user_input) if dist_type else ""
     return {
         "viz_path": viz_path,
         "current_step": "visualization",

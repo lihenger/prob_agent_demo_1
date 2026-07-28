@@ -66,11 +66,21 @@ PARAM_PATTERNS = {
     "r":     r"r",
     "a":     r"a",
     "b":     r"b",
+    "df":    r"df",
 }
 GREEK_OF = {"lam": "λ", "mu": "μ", "sigma": "σ", "alpha": "α", "beta": "β", "nu": "ν", "theta": "θ"}
 
 RESERVED_TOKENS = {"Math", "exp", "sqrt", "log", "abs", "sin", "cos", "tan",
                    "gamma", "beta", "pow", "PI", "E", "x"}
+
+# 参数跨名映射：用户常说"卡方 n=5"（n→k）、"t 分布 df=10"（df→nu）等
+# key → catalog 参数名，按分布区分
+PARAM_REMAP = {
+    "chi_square":  {"n": "k", "df": "k"},
+    "student_t":   {"n": "nu", "df": "nu"},
+    "poisson":     {"lambda": "lam"},
+    "exponential": {"lambda": "lam"},
+}
 
 
 def match_type(text):
@@ -141,10 +151,23 @@ def extract_parenthetical(text, dtype):
 def extract_params(text, dtype, entry):
     """综合「括号参数 + param=value」提取参数。"""
     params = extract_parenthetical(text, dtype)
+    # 应用参数跨名映射：将用户常用名转为 catalog 名
+    remap = PARAM_REMAP.get(dtype, {})
+    params = {remap.get(k, k): v for k, v in params.items()}
     for key, pat in PARAM_PATTERNS.items():
         if key in params:
             continue
+        # 跳过不属于当前分布的参数（除非有跨名映射）
         if key not in entry["params"]:
+            mapped = remap.get(key)
+            if mapped is None:
+                continue
+            # 如果映射目标已有值，不覆盖
+            if mapped in params:
+                continue
+            m = re.search(r"(?<![A-Za-z])" + pat + r"(?:\s*=\s*)(-?\d*\.?\d+)", text)
+            if m:
+                params[mapped] = float(m.group(1))
             continue
         m = re.search(r"(?<![A-Za-z])" + pat + r"(?:\s*=\s*)(-?\d*\.?\d+)", text)
         if m:
